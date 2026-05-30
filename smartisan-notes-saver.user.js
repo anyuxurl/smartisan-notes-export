@@ -2,12 +2,13 @@
 // @name         锤子便签导出助手 (Userscript)
 // @name:en      Smartisan Notes Exporter (Userscript)
 // @namespace    https://github.com/anyuxurl/smartisan-notes-export
-// @version      0.7.0
+// @version      0.8.0
 // @description  一键导出锤子便签：全部导出为 ZIP，或自定义勾选笔记后打包 ZIP / 逐个导出，免装 Chrome 扩展，全平台油猴通用。
 // @description:en  Export Smartisan Cloud notes: all as a ZIP, or pick specific notes then export as a ZIP / loose .md files. Userscript port of reed-soul/smartisan-notes-saver.
 // @author       qeeryyu (基于 reed-soul/smartisan-notes-saver 移植)
 // @match        *://cloud.smartisan.com/*
 // @match        *://note.smartisan.com/*
+// @match        *://yun.smartisan.com/*
 // @icon         https://cloud.smartisan.com/favicon.ico
 // @run-at       document-end
 // @grant        GM_addStyle

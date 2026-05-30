@@ -2,7 +2,7 @@
 
 > Tampermonkey / Violentmonkey 油猴版的锤子便签批量导出工具。在 [reed-soul/smartisan-notes-saver](https://github.com/reed-soul/smartisan-notes-saver) Chrome 扩展基础上重写，移除了所有外部依赖，跨浏览器通用。
 
-一键把 [锤子便签云端](https://cloud.smartisan.com) 里的全部便签导出为 Markdown 文件，保留分类结构，无需安装专属 Chrome 扩展。
+一键把[锤子便签](https://yun.smartisan.com)（`cloud` / `yun` / `note` 三个域名都支持）云端的便签导出为 **Markdown**，保留分类结构——让笔记变成可自由迁移、可接入 Obsidian / Notion 的纯文本，不锁死在单一云端。无需安装专属 Chrome 扩展。
 
 ## 功能
 
@@ -41,7 +41,7 @@
 
 ## 使用
 
-1. 登录 [cloud.smartisan.com](https://cloud.smartisan.com) 并等待便签数据完成同步
+1. 登录 [cloud.smartisan.com](https://cloud.smartisan.com) 或 [yun.smartisan.com](https://yun.smartisan.com) 并等待便签数据完成同步
 2. 页面右下角会出现一个圆形浮动按钮（绿色下载图标）
 3. 点击按钮，弹出菜单：
    - **全部导出** — 把所有便签按分类打包成 ZIP
@@ -103,7 +103,7 @@ smartisan-notes.zip
 
 - 笔记内容只在你本地浏览器内读写，**绝不上传任何数据**
 - 开启「包含图片」时，会用 `GM_xmlhttpRequest` 从 `cloud.smartisan.com` **下载**(GET)笔记里的图片用于打包——单向下载，同样不上传
-- 仅在 `cloud.smartisan.com` / `note.smartisan.com` 两个域名生效
+- 脚本仅在 `cloud.smartisan.com` / `note.smartisan.com` / `yun.smartisan.com` 三个域名生效
 - 持久化仅用 `GM_setValue` / `GM_getValue` 保存设置（文件名、时间戳 / 图片开关等）
 
 ## 技术细节
@@ -116,7 +116,8 @@ smartisan-notes.zip
 
 ## 已知限制
 
-- 图片不存在本地，需联网从锤子云端下载（依赖 `cloud.smartisan.com` 存活，建议尽早导出）
+- 图片不存在本地，需联网从锤子云端下载，建议定期做本地备份
+- 在 `yun` / `note` 域名下导出图片时，图片仍从 `cloud.smartisan.com` 拉取，需浏览器对 cloud 有登录态，否则会标记 `[图片下载失败]`
 - 不保留便签的富文本样式，输出为纯文本 Markdown
 - 笔记数量极多（>1 万条）时，浏览器可能会先卡顿一秒打包
 
