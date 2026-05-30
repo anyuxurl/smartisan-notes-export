@@ -2,9 +2,9 @@
 // @name         锤子便签导出助手 (Userscript)
 // @name:en      Smartisan Notes Exporter (Userscript)
 // @namespace    https://github.com/anyuxurl/smartisan-notes-export
-// @version      0.5.0
-// @description  一键导出锤子便签为 Markdown / ZIP / 多文件，免装 Chrome 扩展，全平台油猴通用。
-// @description:en  Export all Smartisan Cloud notes to Markdown / ZIP / loose .md files. Userscript port of reed-soul/smartisan-notes-saver.
+// @version      0.6.1
+// @description  一键导出锤子便签：全部导出为 ZIP，或自定义勾选笔记后打包 ZIP / 逐个导出，免装 Chrome 扩展，全平台油猴通用。
+// @description:en  Export Smartisan Cloud notes: all as a ZIP, or pick specific notes then export as a ZIP / loose .md files. Userscript port of reed-soul/smartisan-notes-saver.
 // @author       qeeryyu (基于 reed-soul/smartisan-notes-saver 移植)
 // @match        *://cloud.smartisan.com/*
 // @match        *://note.smartisan.com/*
@@ -31,7 +31,7 @@
         includeModifyTime: GM_getValue('includeModifyTime', true),
         includeCreateTime: GM_getValue('includeCreateTime', false),
         zipName: GM_getValue('zipName', 'smartisan-notes.zip'),
-        singleFileName: GM_getValue('singleFileName', 'smartisan-notes.md'),
+        customExportView: GM_getValue('customExportView', 'category'), // 'category' | 'order'
     };
 
     function saveSetting(key, value) {
@@ -127,6 +127,180 @@
             display: none;
         }
         #${MENU_ID} .sns-status.show { display: block; }
+
+        /* -------- 自定义导出模态 -------- */
+        #sns-modal-root {
+            position: fixed;
+            inset: 0;
+            z-index: 2147483647;
+            display: none;
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+        }
+        #sns-modal-root.open { display: block; }
+        #sns-modal-root .sns-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(0,0,0,0.45);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        #sns-modal-root .sns-modal {
+            width: min(92vw, 460px);
+            max-height: 80vh;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.28);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            color: #333;
+            animation: snsPop .14s ease-out;
+        }
+        #sns-modal-root .sns-modal-header {
+            padding: 14px 16px 10px;
+            border-bottom: 1px solid #eee;
+        }
+        #sns-modal-root .sns-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        #sns-modal-root .sns-title { font-size: 15px; font-weight: 600; }
+        #sns-modal-root .sns-close {
+            border: none;
+            background: transparent;
+            font-size: 20px;
+            line-height: 1;
+            color: #999;
+            cursor: pointer;
+            padding: 2px 7px;
+            border-radius: 6px;
+        }
+        #sns-modal-root .sns-close:hover { background: #f3f5f7; color: #333; }
+        #sns-modal-root .sns-search {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 7px 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+        }
+        #sns-modal-root .sns-search:focus { border-color: #1aad19; }
+        #sns-modal-root .sns-viewtabs {
+            display: flex;
+            gap: 2px;
+            margin-bottom: 10px;
+            background: #f3f5f7;
+            border-radius: 8px;
+            padding: 2px;
+        }
+        #sns-modal-root .sns-tab {
+            flex: 1;
+            border: none;
+            background: transparent;
+            padding: 6px 10px;
+            font-size: 12px;
+            color: #666;
+            cursor: pointer;
+            border-radius: 6px;
+            transition: background-color .15s ease, color .15s ease;
+        }
+        #sns-modal-root .sns-tab:hover { color: #333; }
+        #sns-modal-root .sns-tab.active {
+            background: #fff;
+            color: #1aad19;
+            font-weight: 600;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+        #sns-modal-root .sns-select-all { margin-top: 8px; }
+        #sns-modal-root .sns-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px 8px;
+        }
+        #sns-modal-root .sns-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            line-height: 1.3;
+            user-select: none;
+        }
+        #sns-modal-root .sns-row:hover { background: #f3f5f7; }
+        #sns-modal-root .sns-row input[type="checkbox"] {
+            width: 15px;
+            height: 15px;
+            accent-color: #1aad19;
+            cursor: pointer;
+            flex: none;
+            margin: 0;
+        }
+        #sns-modal-root .sns-folder-row { font-weight: 600; color: #333; }
+        #sns-modal-root .sns-caret {
+            width: 14px;
+            text-align: center;
+            color: #999;
+            font-size: 10px;
+            flex: none;
+        }
+        #sns-modal-root .sns-folder-count { color: #999; font-weight: 400; font-size: 12px; }
+        #sns-modal-root .sns-note-row { padding-left: 30px; color: #555; }
+        #sns-modal-root .view-order .sns-note-row { padding-left: 8px; }
+        #sns-modal-root .sns-note-title {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #sns-modal-root .sns-note-time {
+            flex: none;
+            margin-left: 8px;
+            color: #aaa;
+            font-size: 11px;
+            white-space: nowrap;
+        }
+        #sns-modal-root .sns-empty {
+            padding: 28px 12px;
+            text-align: center;
+            color: #999;
+            font-size: 13px;
+        }
+        #sns-modal-root .sns-modal-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 12px 16px;
+            border-top: 1px solid #eee;
+        }
+        #sns-modal-root .sns-count { font-size: 13px; color: #666; }
+        #sns-modal-root .sns-actions { display: flex; gap: 8px; }
+        #sns-modal-root .sns-btn {
+            border: 1px solid #ddd;
+            background: #fff;
+            color: #333;
+            padding: 7px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background-color .15s ease, opacity .15s ease;
+        }
+        #sns-modal-root .sns-btn:hover { background: #f3f5f7; }
+        #sns-modal-root .sns-btn-primary {
+            background: #1aad19;
+            border-color: #1aad19;
+            color: #fff;
+        }
+        #sns-modal-root .sns-btn-primary:hover { background: #129611; }
+        #sns-modal-root .sns-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
     `);
 
     // -------- IndexedDB 读取 --------
@@ -380,24 +554,7 @@
         console.log('[smartisan-notes-saver] download triggered.');
     }
 
-    async function exportAsSingleMarkdown(notesData) {
-        setFabBusy('生成');
-        const parts = [];
-        Object.keys(notesData).sort().forEach((category) => {
-            parts.push(`# ${category}\n`);
-            notesData[category]
-                .slice()
-                .sort((a, b) => (b.modify_time || 0) - (a.modify_time || 0))
-                .forEach((note) => {
-                    parts.push(`## ${note.title}\n\n${note.content}\n`);
-                });
-            parts.push('\n---\n');
-        });
-        const blob = new Blob([parts.join('\n')], { type: 'text/markdown;charset=utf-8' });
-        await downloadBlob(blob, SETTINGS.singleFileName);
-    }
-
-    // 不打包，逐个 .md 下载——最后兜底
+    // 不打包，逐个 .md 下载（自定义导出的一种输出方式）
     async function exportAsLooseFiles(notesData) {
         const all = buildFileList(notesData).map((f) => ({
             name: f.path.replace(/\//g, '__'),
@@ -413,23 +570,29 @@
     }
 
     // -------- 主流程 --------
-    async function runExport(mode /* 'zip' | 'single' | 'loose' */) {
+    // mode: 'zip' | 'loose'；传入 notesData 则导出该子集（自定义导出），不传则提取全部（全部导出）
+    async function runExport(mode, notesData) {
         closeMenu();
-        setFabBusy('读取');
         try {
-            const notesData = await extractNotes();
+            const isSubset = !!notesData;
+            if (!isSubset) {
+                setFabBusy('读取');
+                notesData = await extractNotes();
+            }
             const total = countNotes(notesData);
             console.log('[smartisan-notes-saver] notes loaded:', total, 'in', Object.keys(notesData).length, 'folders');
             if (total === 0) {
-                alert('未找到任何便签，请确认已登录并已同步数据。');
+                alert(isSubset ? '未选择任何便签。' : '未找到任何便签，请确认已登录并已同步数据。');
                 return;
             }
-            const modeLabel = mode === 'single' ? '单个 Markdown' : mode === 'loose' ? '多个独立 .md' : 'ZIP';
-            if (!confirm(`共找到 ${total} 条便签，分布在 ${Object.keys(notesData).length} 个分类中。\n导出模式：${modeLabel}\n是否继续？`)) {
-                return;
+            // 全部导出做二次确认；自定义导出已在面板内明确选择，直接执行
+            if (!isSubset) {
+                const modeLabel = mode === 'loose' ? '多个独立 .md' : 'ZIP';
+                if (!confirm(`共找到 ${total} 条便签，分布在 ${Object.keys(notesData).length} 个分类中。\n导出模式：${modeLabel}\n是否继续？`)) {
+                    return;
+                }
             }
-            if (mode === 'single') await exportAsSingleMarkdown(notesData);
-            else if (mode === 'loose') await exportAsLooseFiles(notesData);
+            if (mode === 'loose') await exportAsLooseFiles(notesData);
             else await exportAsZip(notesData);
         } catch (err) {
             console.error('[smartisan-notes-saver] export failed:', err);
@@ -437,6 +600,276 @@
         } finally {
             setFabBusy(null);
         }
+    }
+
+    // -------- 自定义导出：勾选面板 --------
+    const MODAL_ID = 'sns-modal-root';
+    let modalState = null; // { flat:[{id,folder,note}], selected:Set, collapsed:Set, query:'', view:'category'|'order' }
+
+    function flattenNotes(notesData) {
+        const flat = [];
+        Object.keys(notesData).forEach((folder) => {
+            notesData[folder].forEach((note) => {
+                flat.push({ id: flat.length, folder, note });
+            });
+        });
+        return flat;
+    }
+
+    function buildSubset(flat, selected) {
+        const out = {};
+        flat.forEach((it) => {
+            if (!selected.has(it.id)) return;
+            (out[it.folder] || (out[it.folder] = [])).push(it.note);
+        });
+        return out;
+    }
+
+    function escapeHtml(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // 搜索过滤后的可见笔记（仅影响显示，不改动 selected）
+    function modalVisible() {
+        const q = modalState.query.trim().toLowerCase();
+        if (!q) return modalState.flat;
+        return modalState.flat.filter((it) => (it.note.title || '').toLowerCase().includes(q));
+    }
+    function modalVisibleGroups() {
+        const groups = new Map();
+        modalVisible().forEach((it) => {
+            if (!groups.has(it.folder)) groups.set(it.folder, []);
+            groups.get(it.folder).push(it);
+        });
+        return groups;
+    }
+
+    // 简短修改时间（M-D HH:mm），用于在行尾佐证排序
+    function shortTime(ts) {
+        if (!ts) return '';
+        try {
+            const d = new Date(ts);
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getMonth() + 1}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        } catch (_) { return ''; }
+    }
+    // 按修改时间倒序（最近在前），不改原数组
+    function sortByTimeDesc(arr) {
+        return arr.slice().sort((a, b) => (b.note.modify_time || 0) - (a.note.modify_time || 0));
+    }
+    function noteRowHtml(it) {
+        return `
+                    <div class="sns-row sns-note-row" data-id="${it.id}">
+                        <input type="checkbox"${modalState.selected.has(it.id) ? ' checked' : ''} />
+                        <span class="sns-note-title">${escapeHtml(it.note.title || '(无标题)')}</span>
+                        <span class="sns-note-time">${shortTime(it.note.modify_time)}</span>
+                    </div>`;
+    }
+    function folderRowHtml(folder, collapsed, selCount, total) {
+        return `
+                    <div class="sns-row sns-folder-row" data-folder="${escapeHtml(folder)}">
+                        <span class="sns-caret">${collapsed ? '▶' : '▼'}</span>
+                        <input type="checkbox"${selCount === total ? ' checked' : ''} />
+                        <span class="sns-note-title">${escapeHtml(folder)}</span>
+                        <span class="sns-folder-count">(${selCount}/${total})</span>
+                    </div>`;
+    }
+
+    function renderModal() {
+        const root = document.getElementById(MODAL_ID);
+        if (!root || !modalState) return;
+        const body = root.querySelector('.sns-body');
+        const visible = modalVisible();
+        const visibleCount = visible.length;
+
+        // 视图高亮 + body 视图 class（控制顺序视图的缩进）
+        root.querySelectorAll('.sns-tab').forEach((t) => {
+            t.classList.toggle('active', t.dataset.view === modalState.view);
+        });
+        body.className = 'sns-body view-' + modalState.view;
+
+        if (visibleCount === 0) {
+            body.innerHTML = `<div class="sns-empty">没有匹配的笔记</div>`;
+        } else if (modalState.view === 'order') {
+            // 不分组，全部按修改时间倒序
+            body.innerHTML = sortByTimeDesc(visible).map(noteRowHtml).join('');
+        } else {
+            // 按分类分组，组内按修改时间倒序
+            const groups = modalVisibleGroups();
+            let html = '';
+            groups.forEach((items, folder) => {
+                const collapsed = modalState.collapsed.has(folder);
+                const selCount = items.filter((it) => modalState.selected.has(it.id)).length;
+                html += folderRowHtml(folder, collapsed, selCount, items.length);
+                if (!collapsed) sortByTimeDesc(items).forEach((it) => { html += noteRowHtml(it); });
+            });
+            body.innerHTML = html;
+            // indeterminate 是 DOM 属性，HTML 标记无法表达，渲染后按文件夹顺序补设
+            const folderRows = body.querySelectorAll('.sns-folder-row');
+            let i = 0;
+            groups.forEach((items) => {
+                const selCount = items.filter((it) => modalState.selected.has(it.id)).length;
+                const cb = folderRows[i] && folderRows[i].querySelector('input[type="checkbox"]');
+                if (cb) cb.indeterminate = selCount > 0 && selCount < items.length;
+                i++;
+            });
+        }
+
+        // 底部计数 + 按钮可用性
+        const selectedTotal = modalState.selected.size;
+        root.querySelector('.sns-count').textContent = `已选 ${selectedTotal} 条`;
+        root.querySelectorAll('.sns-actions .sns-btn').forEach((b) => { b.disabled = selectedTotal === 0; });
+
+        // 顶部全选（基于当前可见项）
+        const allCb = root.querySelector('.sns-all-cb');
+        const visSel = visible.filter((it) => modalState.selected.has(it.id)).length;
+        allCb.checked = visibleCount > 0 && visSel === visibleCount;
+        allCb.indeterminate = visSel > 0 && visSel < visibleCount;
+    }
+
+    function closeModal() {
+        const root = document.getElementById(MODAL_ID);
+        if (root) root.classList.remove('open');
+    }
+
+    function ensureModalRoot() {
+        let root = document.getElementById(MODAL_ID);
+        if (root) return root;
+        root = document.createElement('div');
+        root.id = MODAL_ID;
+        root.innerHTML = `
+            <div class="sns-overlay">
+                <div class="sns-modal" role="dialog" aria-modal="true">
+                    <div class="sns-modal-header">
+                        <div class="sns-title-row">
+                            <span class="sns-title">自定义导出</span>
+                            <button class="sns-close" type="button" title="关闭">×</button>
+                        </div>
+                        <div class="sns-viewtabs">
+                            <button class="sns-tab" type="button" data-view="category">按分类</button>
+                            <button class="sns-tab" type="button" data-view="order">按顺序</button>
+                        </div>
+                        <input class="sns-search" type="text" placeholder="搜索笔记标题…" />
+                        <div class="sns-row sns-select-all">
+                            <input type="checkbox" class="sns-all-cb" />
+                            <span>全选（当前显示）</span>
+                        </div>
+                    </div>
+                    <div class="sns-body"></div>
+                    <div class="sns-modal-footer">
+                        <span class="sns-count">已选 0 条</span>
+                        <div class="sns-actions">
+                            <button class="sns-btn" type="button" data-mode="loose" disabled>逐个导出</button>
+                            <button class="sns-btn sns-btn-primary" type="button" data-mode="zip" disabled>打包 ZIP</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(root);
+
+        const overlay = root.querySelector('.sns-overlay');
+        const body = root.querySelector('.sns-body');
+        const search = root.querySelector('.sns-search');
+
+        // 关闭：× / 点遮罩空白 / ESC
+        root.querySelector('.sns-close').addEventListener('click', closeModal);
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && root.classList.contains('open')) closeModal();
+        });
+
+        // 搜索：仅过滤显示
+        search.addEventListener('input', (e) => { modalState.query = e.target.value; renderModal(); });
+
+        // 视图切换：按分类 / 按顺序
+        root.querySelector('.sns-viewtabs').addEventListener('click', (e) => {
+            const tab = e.target.closest('.sns-tab');
+            if (!tab || tab.dataset.view === modalState.view) return;
+            modalState.view = tab.dataset.view;
+            saveSetting('customExportView', modalState.view);
+            renderModal();
+        });
+
+        // 顶部全选：作用于当前可见项（整行可点）
+        root.querySelector('.sns-select-all').addEventListener('click', () => {
+            const visible = modalVisible();
+            const allSel = visible.length > 0 && visible.every((it) => modalState.selected.has(it.id));
+            visible.forEach((it) => allSel ? modalState.selected.delete(it.id) : modalState.selected.add(it.id));
+            renderModal();
+        });
+
+        // 列表点击委托：箭头折叠 / 文件夹行全选 / 单条切换
+        body.addEventListener('click', (e) => {
+            const row = e.target.closest('.sns-row');
+            if (!row) return;
+            if (e.target.closest('.sns-caret')) {
+                const folder = row.dataset.folder;
+                if (modalState.collapsed.has(folder)) modalState.collapsed.delete(folder);
+                else modalState.collapsed.add(folder);
+                renderModal();
+                return;
+            }
+            if (row.classList.contains('sns-folder-row')) {
+                const items = modalVisibleGroups().get(row.dataset.folder) || [];
+                const allSel = items.length > 0 && items.every((it) => modalState.selected.has(it.id));
+                items.forEach((it) => allSel ? modalState.selected.delete(it.id) : modalState.selected.add(it.id));
+                renderModal();
+            } else if (row.classList.contains('sns-note-row')) {
+                const id = Number(row.dataset.id);
+                if (modalState.selected.has(id)) modalState.selected.delete(id);
+                else modalState.selected.add(id);
+                renderModal();
+            }
+        });
+
+        // 底部导出：把选中项重建为 notesData 子集，复用 runExport
+        root.querySelector('.sns-actions').addEventListener('click', (e) => {
+            const btn = e.target.closest('.sns-btn');
+            if (!btn || btn.disabled) return;
+            const subset = buildSubset(modalState.flat, modalState.selected);
+            closeModal();
+            runExport(btn.dataset.mode, subset);
+        });
+
+        return root;
+    }
+
+    async function openCustomExport() {
+        closeMenu();
+        setFabBusy('读取');
+        let data;
+        try {
+            data = await extractNotes();
+        } catch (err) {
+            console.error('[smartisan-notes-saver] extract failed:', err);
+            alert(`读取便签失败: ${err && err.message ? err.message : err}`);
+            return;
+        } finally {
+            setFabBusy(null);
+        }
+        const total = countNotes(data);
+        if (total === 0) {
+            alert('未找到任何便签，请确认已登录并已同步数据。');
+            return;
+        }
+        const flat = flattenNotes(data);
+        modalState = {
+            flat,
+            selected: new Set(flat.map((it) => it.id)), // 默认全选
+            collapsed: new Set(),
+            query: '',
+            view: SETTINGS.customExportView,            // 'category' | 'order'
+        };
+        const root = ensureModalRoot();
+        root.querySelector('.sns-search').value = '';
+        renderModal();
+        root.classList.add('open');
+        root.querySelector('.sns-search').focus();
     }
 
     // -------- UI 注入：FAB + 弹出菜单 --------
@@ -447,15 +880,13 @@
         const tickCreate = SETTINGS.includeCreateTime ? '<span class="sns-check">✓</span>' : '';
         return `
             <div class="sns-section-label">导出</div>
-            <button class="sns-item" data-act="zip"><span>导出为 ZIP</span><span style="color:#999;font-size:11px">推荐</span></button>
-            <button class="sns-item" data-act="single"><span>导出为单个 Markdown</span></button>
-            <button class="sns-item" data-act="loose"><span>导出为多个独立 .md</span></button>
+            <button class="sns-item" data-act="all"><span>全部导出</span><span style="color:#999;font-size:11px">ZIP</span></button>
+            <button class="sns-item" data-act="custom"><span>自定义导出…</span><span style="color:#999;font-size:11px">选择笔记</span></button>
             <div class="sns-divider"></div>
             <div class="sns-section-label">选项</div>
             <button class="sns-item" data-act="toggleModify"><span>包含修改时间</span>${tickModify}</button>
             <button class="sns-item" data-act="toggleCreate"><span>包含创建时间</span>${tickCreate}</button>
             <button class="sns-item" data-act="setZipName"><span>设置 ZIP 文件名…</span></button>
-            <button class="sns-item" data-act="setMdName"><span>设置单文件名…</span></button>
             <div id="sns-status" class="sns-status"></div>
         `;
     }
@@ -481,9 +912,8 @@
 
     function handleMenuAction(act) {
         switch (act) {
-            case 'zip':    runExport('zip'); break;
-            case 'single': runExport('single'); break;
-            case 'loose':  runExport('loose'); break;
+            case 'all':    runExport('zip'); break;
+            case 'custom': openCustomExport(); break;
             case 'toggleModify':
                 saveSetting('includeModifyTime', !SETTINGS.includeModifyTime);
                 refreshMenuContent();
@@ -495,11 +925,6 @@
             case 'setZipName': {
                 const v = prompt('ZIP 文件名：', SETTINGS.zipName);
                 if (v) saveSetting('zipName', v.trim());
-                break;
-            }
-            case 'setMdName': {
-                const v = prompt('单文件 Markdown 文件名：', SETTINGS.singleFileName);
-                if (v) saveSetting('singleFileName', v.trim());
                 break;
             }
         }
@@ -524,13 +949,13 @@
         const menu = root.querySelector('#' + MENU_ID);
         refreshMenuContent();
 
-        // 左键 = 切换菜单；按住 Shift + 点击 = 直接 ZIP 导出
+        // 左键 = 切换菜单；按住 Shift + 点击 = 直接全部导出（ZIP）
         fab.addEventListener('click', (e) => {
             if (fab.disabled) return;
             if (e.shiftKey) { closeMenu(); runExport('zip'); }
             else toggleMenu();
         });
-        // 右键 = 直接默认导出 ZIP
+        // 右键 = 直接全部导出（ZIP）
         fab.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             if (!fab.disabled) { closeMenu(); runExport('zip'); }
@@ -569,9 +994,8 @@
     if (document.body) mo.observe(document.body, { childList: true, subtree: false });
 
     // -------- 油猴菜单（保留作为备选入口）--------
-    GM_registerMenuCommand('导出便签为 ZIP', () => runExport('zip'));
-    GM_registerMenuCommand('导出便签为单个 Markdown', () => runExport('single'));
-    GM_registerMenuCommand('导出为多个独立 .md 文件 (不打包，兜底)', () => runExport('loose'));
+    GM_registerMenuCommand('全部导出为 ZIP', () => runExport('zip'));
+    GM_registerMenuCommand('自定义导出…（选择笔记）', () => openCustomExport());
     GM_registerMenuCommand(
         `${SETTINGS.includeModifyTime ? '✅' : '⬜'} 包含修改时间`,
         () => { saveSetting('includeModifyTime', !SETTINGS.includeModifyTime); refreshMenuContent(); alert('已切换'); }
@@ -583,9 +1007,5 @@
     GM_registerMenuCommand('设置 ZIP 文件名', () => {
         const v = prompt('ZIP 文件名：', SETTINGS.zipName);
         if (v) saveSetting('zipName', v);
-    });
-    GM_registerMenuCommand('设置单文件 Markdown 文件名', () => {
-        const v = prompt('单文件 Markdown 文件名：', SETTINGS.singleFileName);
-        if (v) saveSetting('singleFileName', v);
     });
 })();
