@@ -6,10 +6,11 @@
 
 ## 功能
 
-- ✅ 直接读取浏览器本地的 IndexedDB（`_pouch_folder` / `_pouch_note`），无网络请求、不上传任何数据
+- ✅ 笔记文本直接读取浏览器本地 IndexedDB（`_pouch_folder` / `_pouch_note`），全程不上传任何数据（仅在「包含图片」开启时，从锤子云端**下载**图片）
 - ✅ 两种导出流程：
   - **全部导出**：一键把所有便签按分类打成 ZIP 压缩包，含 UTF-8 文件名，Windows / macOS / Linux 解压都能正确显示中文
   - **自定义导出**：弹出面板，按分类勾选需要的便签（支持搜索、文件夹整选、全选，可在「按分类 / 按修改时间」两种顺序间切换），再选择打包成 ZIP 或逐个下载 .md
+- ✅ **导出笔记内的图片**：可开关（默认开）。开启后从锤子云端下载图片——ZIP 模式存入 `images/` 文件夹并用相对路径 `![](../images/…)` 引用，逐个导出则内嵌为 base64；下载失败会在正文标注 `[图片下载失败: …]`。关闭则把图片转为云端链接
 - ✅ 可选导出元数据：是否包含修改时间 / 创建时间
 - ✅ 自定义 ZIP 文件名（持久化保存）
 - ✅ 同分类下重名便签自动加 `_2`、`_3` 后缀，避免文件覆盖丢失
@@ -100,9 +101,10 @@ smartisan-notes.zip
 
 ## 隐私
 
-- 所有数据读写都在你本地浏览器内，**不上传到任何服务器**
+- 笔记内容只在你本地浏览器内读写，**绝不上传任何数据**
+- 开启「包含图片」时，会用 `GM_xmlhttpRequest` 从 `cloud.smartisan.com` **下载**(GET)笔记里的图片用于打包——单向下载，同样不上传
 - 仅在 `cloud.smartisan.com` / `note.smartisan.com` 两个域名生效
-- 仅请求 `GM_setValue` / `GM_getValue` 用于保存设置（如文件名、是否含时间戳）
+- 持久化仅用 `GM_setValue` / `GM_getValue` 保存设置（文件名、时间戳 / 图片开关等）
 
 ## 技术细节
 
@@ -110,10 +112,11 @@ smartisan-notes.zip
 - **去重**：`_deleted` 字段过滤已删除条目
 - **ZIP 打包**：手写 STORE 模式 ZIP 二进制流（Local File Header / Central Directory / EOCD），CRC-32 计算用 256 项查表，文件名 UTF-8 + flag bit 0x0800
 - **下载**：`<a download>` + `URL.createObjectURL`，绕开 FileSaver 在某些 CSP 下的静默失败
+- **图片**：`detail` 内联私有标签 `<image … name=Notes_<ts>.jpeg>`，拼成 `notesimage/<name>` 经 `GM_xmlhttpRequest` 下载，再改写为标准 Markdown（ZIP 存 `images/` 相对引用 / 逐个导出内嵌 base64）
 
 ## 已知限制
 
-- 不导出便签里的图片附件（与原扩展一致）
+- 图片不存在本地，需联网从锤子云端下载（依赖 `cloud.smartisan.com` 存活，建议尽早导出）
 - 不保留便签的富文本样式，输出为纯文本 Markdown
 - 笔记数量极多（>1 万条）时，浏览器可能会先卡顿一秒打包
 

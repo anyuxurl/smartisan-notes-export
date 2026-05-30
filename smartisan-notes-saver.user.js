@@ -2,7 +2,7 @@
 // @name         锤子便签导出助手 (Userscript)
 // @name:en      Smartisan Notes Exporter (Userscript)
 // @namespace    https://github.com/anyuxurl/smartisan-notes-export
-// @version      0.6.1
+// @version      0.7.0
 // @description  一键导出锤子便签：全部导出为 ZIP，或自定义勾选笔记后打包 ZIP / 逐个导出，免装 Chrome 扩展，全平台油猴通用。
 // @description:en  Export Smartisan Cloud notes: all as a ZIP, or pick specific notes then export as a ZIP / loose .md files. Userscript port of reed-soul/smartisan-notes-saver.
 // @author       qeeryyu (基于 reed-soul/smartisan-notes-saver 移植)
@@ -14,6 +14,8 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_xmlhttpRequest
+// @connect      cloud.smartisan.com
 // @homepageURL  https://github.com/anyuxurl/smartisan-notes-export
 // @supportURL   https://github.com/anyuxurl/smartisan-notes-export/issues
 // @updateURL    https://raw.githubusercontent.com/anyuxurl/smartisan-notes-export/main/smartisan-notes-saver.user.js
@@ -21,7 +23,7 @@
 // @license      MIT
 // ==/UserScript==
 
-/* global GM_addStyle, GM_setValue, GM_getValue, GM_registerMenuCommand */
+/* global GM_addStyle, GM_setValue, GM_getValue, GM_registerMenuCommand, GM_xmlhttpRequest */
 
 (function () {
     'use strict';
@@ -32,6 +34,7 @@
         includeCreateTime: GM_getValue('includeCreateTime', false),
         zipName: GM_getValue('zipName', 'smartisan-notes.zip'),
         customExportView: GM_getValue('customExportView', 'category'), // 'category' | 'order'
+        includeImages: GM_getValue('includeImages', true),
     };
 
     function saveSetting(key, value) {
@@ -423,7 +426,7 @@
         return (c ^ 0xFFFFFFFF) >>> 0;
     }
 
-    function buildStoreZip(files /* [{path, content}] */) {
+    function buildStoreZip(files /* [{path, content}] 或 {path, bytes:Uint8Array} */) {
         const enc = new TextEncoder();
         const now = new Date();
         const dosTime = ((now.getHours() & 0x1F) << 11) | ((now.getMinutes() & 0x3F) << 5) | (Math.floor(now.getSeconds() / 2) & 0x1F);
@@ -435,7 +438,7 @@
 
         files.forEach((f) => {
             const nameBytes = enc.encode(f.path);
-            const dataBytes = enc.encode(String(f.content == null ? '' : f.content));
+            const dataBytes = f.bytes instanceof Uint8Array ? f.bytes : enc.encode(String(f.content == null ? '' : f.content));
             const crc = crc32(dataBytes);
 
             // Local file header
@@ -519,6 +522,106 @@
         return files;
     }
 
+    // -------- 图片处理 --------
+    // 锤子图片以自定义标签内联在 detail：<image w=.. h=.. describe=.. name=Notes_<ts>.jpeg>
+    const IMG_BASE = 'https://cloud.smartisan.com/apps/note/notesimage/';
+    const IMG_TAG_RE = /<image\b[^>]*>/gi;
+
+    function parseImageTag(tag) {
+        const name = (tag.match(/\bname=([^\s>]+)/) || [])[1] || '';
+        const describe = (tag.match(/\bdescribe=(.*?)\s+name=/) || [])[1] || '';
+        return { name, describe: describe.trim() };
+    }
+
+    function collectImageNames(notesData) {
+        const set = new Set();
+        Object.values(notesData).forEach((arr) => arr.forEach((note) => {
+            const re = new RegExp(IMG_TAG_RE.source, 'gi');
+            let m;
+            while ((m = re.exec(String(note.content || '')))) {
+                const { name } = parseImageTag(m[0]);
+                if (name) set.add(name);
+            }
+        }));
+        return [...set];
+    }
+
+    function mimeFromName(name) {
+        const ext = (name.split('.').pop() || '').toLowerCase();
+        return ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', heic: 'image/heic', bmp: 'image/bmp' })[ext] || 'application/octet-stream';
+    }
+
+    // GM_xmlhttpRequest 包成 Promise，带 cookie 取图片二进制
+    function gmFetchBlob(url, name) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                url,
+                responseType: 'arraybuffer',
+                timeout: 30000,
+                onload: (r) => {
+                    if (r.status >= 200 && r.status < 300 && r.response) {
+                        const ct = (String(r.responseHeaders || '').match(/content-type:\s*([^\r\n;]+)/i) || [])[1];
+                        const mime = ct && /image\/[a-z0-9.+-]+/i.test(ct) ? ct.trim() : mimeFromName(name);
+                        resolve({ bytes: new Uint8Array(r.response), mime });
+                    } else {
+                        reject(new Error('HTTP ' + r.status));
+                    }
+                },
+                onerror: () => reject(new Error('network error')),
+                ontimeout: () => reject(new Error('timeout')),
+            });
+        });
+    }
+
+    // 固定并发下载，单张失败记 {ok:false} 不中断；返回 Map<name,{bytes,mime,ok}>
+    async function downloadImages(names, onProgress) {
+        const map = new Map();
+        const queue = names.slice();
+        let done = 0;
+        const CONCURRENCY = 5;
+        async function worker() {
+            while (queue.length) {
+                const name = queue.shift();
+                try {
+                    const { bytes, mime } = await gmFetchBlob(IMG_BASE + encodeURIComponent(name), name);
+                    map.set(name, { bytes, mime, ok: true });
+                } catch (err) {
+                    console.warn('[smartisan-notes-saver] image failed:', name, err);
+                    map.set(name, { ok: false });
+                }
+                done++;
+                if (onProgress) onProgress(done, names.length);
+            }
+        }
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, names.length) }, worker));
+        return map;
+    }
+
+    function bytesToBase64(bytes) {
+        let bin = '';
+        const CH = 0x8000; // 分块避免 apply 实参过多爆栈
+        for (let i = 0; i < bytes.length; i += CH) {
+            bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+        }
+        return btoa(bin);
+    }
+
+    // 把 detail 里的 <image> 私有标签改写为标准 Markdown（按导出模式 / 开关）
+    function rewriteImages(notesData, opt) {
+        Object.values(notesData).forEach((arr) => arr.forEach((note) => {
+            note.content = String(note.content || '').replace(IMG_TAG_RE, (tag) => {
+                const { name, describe } = parseImageTag(tag);
+                if (!name) return tag;
+                if (!opt.wantImages) return `![${describe}](${IMG_BASE}${encodeURIComponent(name)})`;
+                const e = opt.imgMap.get(name);
+                if (!e || !e.ok) return `[图片下载失败: ${name}]`;
+                if (opt.mode === 'loose') return `![${describe}](data:${e.mime};base64,${bytesToBase64(e.bytes)})`;
+                return `![${describe}](../images/${name})`;
+            });
+        }));
+    }
+
     // -------- UI 状态辅助 --------
     function getFab() { return document.getElementById(FAB_ID); }
     function setFabBusy(label) {
@@ -542,9 +645,14 @@
         else { status.classList.remove('show'); }
     }
 
-    async function exportAsZip(notesData) {
+    async function exportAsZip(notesData, imgMap) {
         setFabBusy('打包');
         const files = buildFileList(notesData);
+        if (imgMap) {
+            imgMap.forEach((v, name) => {
+                if (v && v.ok) files.push({ path: `images/${name}`, bytes: v.bytes });
+            });
+        }
         console.log('[smartisan-notes-saver] building zip with', files.length, 'files (native STORE)...');
         await new Promise((r) => setTimeout(r, 0));
         const blob = buildStoreZip(files);
@@ -592,8 +700,19 @@
                     return;
                 }
             }
+            // 图片：收集 → 下载 → 改写正文引用（开关关时改写为云端 URL，不下载）
+            const wantImages = SETTINGS.includeImages;
+            const imgNames = collectImageNames(notesData);
+            let imgMap = new Map();
+            if (wantImages && imgNames.length) {
+                setFabBusy('图片');
+                console.log('[smartisan-notes-saver] downloading', imgNames.length, 'images...');
+                imgMap = await downloadImages(imgNames, (d, t) => setFabBusy(`图 ${d}/${t}`));
+            }
+            rewriteImages(notesData, { mode, wantImages, imgMap });
+
             if (mode === 'loose') await exportAsLooseFiles(notesData);
-            else await exportAsZip(notesData);
+            else await exportAsZip(notesData, wantImages ? imgMap : null);
         } catch (err) {
             console.error('[smartisan-notes-saver] export failed:', err);
             alert(`导出失败: ${err && err.message ? err.message : err}\n详细信息见控制台。`);
@@ -878,6 +997,7 @@
     function buildMenuHtml() {
         const tickModify = SETTINGS.includeModifyTime ? '<span class="sns-check">✓</span>' : '';
         const tickCreate = SETTINGS.includeCreateTime ? '<span class="sns-check">✓</span>' : '';
+        const tickImages = SETTINGS.includeImages ? '<span class="sns-check">✓</span>' : '';
         return `
             <div class="sns-section-label">导出</div>
             <button class="sns-item" data-act="all"><span>全部导出</span><span style="color:#999;font-size:11px">ZIP</span></button>
@@ -886,6 +1006,7 @@
             <div class="sns-section-label">选项</div>
             <button class="sns-item" data-act="toggleModify"><span>包含修改时间</span>${tickModify}</button>
             <button class="sns-item" data-act="toggleCreate"><span>包含创建时间</span>${tickCreate}</button>
+            <button class="sns-item" data-act="toggleImages"><span>包含图片（联网下载）</span>${tickImages}</button>
             <button class="sns-item" data-act="setZipName"><span>设置 ZIP 文件名…</span></button>
             <div id="sns-status" class="sns-status"></div>
         `;
@@ -920,6 +1041,10 @@
                 break;
             case 'toggleCreate':
                 saveSetting('includeCreateTime', !SETTINGS.includeCreateTime);
+                refreshMenuContent();
+                break;
+            case 'toggleImages':
+                saveSetting('includeImages', !SETTINGS.includeImages);
                 refreshMenuContent();
                 break;
             case 'setZipName': {
@@ -1003,6 +1128,10 @@
     GM_registerMenuCommand(
         `${SETTINGS.includeCreateTime ? '✅' : '⬜'} 包含创建时间`,
         () => { saveSetting('includeCreateTime', !SETTINGS.includeCreateTime); refreshMenuContent(); alert('已切换'); }
+    );
+    GM_registerMenuCommand(
+        `${SETTINGS.includeImages ? '✅' : '⬜'} 包含图片（联网下载）`,
+        () => { saveSetting('includeImages', !SETTINGS.includeImages); refreshMenuContent(); alert('已切换'); }
     );
     GM_registerMenuCommand('设置 ZIP 文件名', () => {
         const v = prompt('ZIP 文件名：', SETTINGS.zipName);
