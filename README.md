@@ -125,6 +125,7 @@ smartisan-notes.zip
 
 - 原 Chrome 扩展作者 [@reed-soul](https://github.com/reed-soul) 提供了 IndexedDB schema 的逆向与原始实现思路
 - 移植 / 重写 / 维护：[@qeeryyu](https://github.com/anyuxurl)
+- [LINUX DO 论坛](https://linux.do)
 
 ## License
 
