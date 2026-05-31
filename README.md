@@ -1,4 +1,4 @@
-# 锤子便签导出助手 (Userscript)
+# 锤子便签导出助手
 
 > Tampermonkey / Violentmonkey 油猴版的锤子便签批量导出工具。在 [reed-soul/smartisan-notes-saver](https://github.com/reed-soul/smartisan-notes-saver) Chrome 扩展基础上重写，移除了所有外部依赖，跨浏览器通用。
 
