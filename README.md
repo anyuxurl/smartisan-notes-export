@@ -31,7 +31,7 @@
 
 ### 方式二：Greasy Fork
 
-> _Greasy Fork 链接发布后会更新到这里_
+https://greasyfork.org/zh-CN/scripts/576584-%E9%94%A4%E5%AD%90%E4%BE%BF%E7%AD%BE%E5%AF%BC%E5%87%BA%E5%8A%A9%E6%89%8B
 
 ### 方式三：手动安装
 
